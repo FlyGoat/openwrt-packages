@@ -15,37 +15,67 @@ PKG_SOURCE_VERSION:=744bbe52976e51895fce2c1d4075f97a98dca2b2
 PKG_MAINTAINER:=Jiaxun Yang <jiaxun.yang@flygoat.com>
 PKG_BUILD_PARALLEL:=1
 
+STAMP_CONFIGURED_DEPENDS := $(STAGING_DIR)/usr/include/mac80211-backport/backport/autoconf.h
+
 include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/package.mk
 
-define KernelPackage/rtl8192eu
-  SUBMENU:=Wireless Drivers
-  TITLE:=Driver for Realtek 8192EU devices
-  DEPENDS:=+kmod-cfg80211 +kmod-usb-core +@DRIVER_11N_SUPPORT
-  FILES:=\
-	$(PKG_BUILD_DIR)/rtl8192eu.ko
-  AUTOLOAD:=$(call AutoProbe,rtl8192eu)
-  PROVIDES:=kmod-rtl8192eu
-endef
+USER_EXTRA_CFLAGS = -DBACKPORT
 
-EXTRA_KCONFIG:= \
-	CONFIG_RTL8192EU=m
+ifneq ($(LINUX_KARCH), x86)
+USER_EXTRA_CFLAGS += -DCONFIG_MINIMAL_MEMORY_USAGE 
+endif
 
-EXTRA_CFLAGS:= \
-	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=m,%,$(filter %=m,$(EXTRA_KCONFIG)))) \
-	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=y,%,$(filter %=y,$(EXTRA_KCONFIG)))) \
+USER_EXTRA_CFLAGS += -DCONFIG_RTW_IOCTL_SET_COUNTRY
+USER_EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211
+USER_EXTRA_CFLAGS += -DRTW_USE_CFG80211_STA_EVENT
+USER_EXTRA_CFLAGS += -DCONFIG_MP_INCLUDED
+USER_EXTRA_CFLAGS += -DCONFIG_WEXT_PRIV
+USER_EXTRA_CFLAGS += -DCONFIG_WIRELESS_EXT
+USER_EXTRA_CFLAGS += -DCFG80211_VERSION_CODE=0x50f08
+
+MAKE_FEATURES:= \
+	CONFIG_POWER_SAVING="n"
+
+NOSTDINC_FLAGS := \
+	$(KERNEL_NOSTDINC_FLAGS) \
+	-I$(PKG_BUILD_DIR) \
+	-I$(STAGING_DIR)/usr/include/mac80211-backport/uapi \
+	-I$(STAGING_DIR)/usr/include/mac80211-backport \
+	-I$(STAGING_DIR)/usr/include/mac80211/uapi \
+	-I$(STAGING_DIR)/usr/include/mac80211 \
+	-include backport/autoconf.h \
+	-include backport/backport.h
 
 MAKE_OPTS:= \
-	$(KERNEL_MAKE_FLAGS) \
+	ARCH="$(LINUX_KARCH)" \
+	CROSS_COMPILE="$(KERNEL_CROSS)" \
+	KSRC="$(LINUX_DIR)" \
+	KVER="$(LINUX_VERSION)" \
 	M="$(PKG_BUILD_DIR)" \
-	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
-	$(EXTRA_KCONFIG)
+	MODULE_NAME="8192eu" \
+	USER_EXTRA_CFLAGS="$(USER_EXTRA_CFLAGS)" \
+	NOSTDINC_FLAGS="$(NOSTDINC_FLAGS)" 
+	KBUILD_EXTRA_SYMBOLS="${STAGING_DIR}/usr/include/mac80211/Module.symvers" \
+	$(MAKE_FEATURES)
 
-define Build/Compile
-	 $(MAKE) -C "$(LINUX_DIR)" \
-		$(MAKE_OPTS) \
-		modules
+
+define KernelPackage/$(PKG_NAME)
+  SUBMENU:=Wireless Drivers
+  TITLE:=Realtek RTL8192EU support
+  DEPENDS:=@USB_SUPPORT +kmod-lib80211 +kmod-cfg80211 +kmod-usb-core +@DRIVER_11N_SUPPORT
+  FILES:=$(PKG_BUILD_DIR)/8192eu.ko
+  AUTOLOAD:=$(call AutoProbe,rtl8192eu)
+endef
+
+define KernelPackage/$(PKG_NAME)/description
+ Kernel modules for the Realtek RTL-8192EU USB 802.11bgn
+ wireless USB adapters
 endef
 
 
-$(eval $(call KernelPackage,rtl8192eu))
+define Build/Compile
+	$(MAKE) -C $(PKG_BUILD_DIR) $(MAKE_OPTS) modules
+endef
+
+$(eval $(call KernelPackage,$(PKG_NAME)))
